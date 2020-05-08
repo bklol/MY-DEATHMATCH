@@ -3,15 +3,20 @@
 #include <sdktools>
 #include <sdkhooks>
 #include <overlays>
+#include <clientprefs>
 
-#define Killone "overlays/kills/kill_1"
-#define Killtwo "overlays/kills/kill_2"
-#define Killthree "overlays/kills/kill_3"
-#define Killfour "overlays/kills/kill_4"
-#define Killfive "overlays/kills/kill_5"
-#define Killsix "overlays/kills/kill_6"
-#define HeadShot "overlays/kills/HeadShot_1"
+#define Killone "overlays/kill/kill_1"
+#define Killtwo "overlays/kill/kill_2"
+#define Killthree "overlays/kill/kill_3"
+#define Killfour "overlays/kill/kill_4"
+#define Killfive "overlays/kill/kill_5"
+
 #define DMG_HEADSHOT (1 << 30)
+
+Handle g_hWeapon_Primary_Cookie;
+Handle g_hWeapon_Secondary_Cookie;
+Handle g_Hide_Cookie;
+Handle g_hHSOnly_Cookie;
 
 ConVar IsEnemies;
 ConVar mp_respawn_on_death_t;
@@ -42,8 +47,10 @@ int g_szUnstoppable = 0;
 int g_szWickedSick = 0;
 
 bool UseOldWpn[MAXPLAYERS+1];
-bool g_bInEditMode = false;
+bool g_bHide[MAXPLAYERS+1];
 bool g_bHSOnlyClient[MAXPLAYERS + 1];
+bool g_bInEditMode = false;
+bool IsPistal=false;
 
 float g_fSpawnPositions[137][3];
 float g_fSpawnAngles[137][3];
@@ -106,10 +113,17 @@ public void OnPluginStart()
 	PrecacheDecalAnyDownload(Killthree);
 	PrecacheDecalAnyDownload(Killfour);
 	PrecacheDecalAnyDownload(Killfive);
+	
+	 g_hWeapon_Primary_Cookie = RegClientCookie("dm_weapon_primary", "Primary Weapon Selection", CookieAccess_Protected);
+    g_hWeapon_Secondary_Cookie = RegClientCookie("dm_weapon_secondary", "Secondary Weapon Selection", CookieAccess_Protected);
+    g_Hide_Cookie = RegClientCookie("dm_hide", "hide eff", CookieAccess_Protected);
+    g_hHSOnly_Cookie = RegClientCookie("dm_hsonly", "Headshot Only", CookieAccess_Protected);
+	
 	RegConsoleCmd("sm_guns", Gunmenu);
 	RegConsoleCmd("sm_gun", Gunmenu);
 	RegConsoleCmd("sm_p", SetPosition);
 	RegConsoleCmd("sm_hs", Hs);
+	RegConsoleCmd("sm_hide", Hide);
 	
 	HookEvent("bomb_pickup", Event_BombPickup);
 	HookEvent("weapon_fire_on_empty", Event_WeaponFireOnEmpty, EventHookMode_Post); 
@@ -120,16 +134,51 @@ public void OnPluginStart()
 	CreateTimer(35.0, AD, INVALID_HANDLE, TIMER_REPEAT);
 	
 	g_iAmmoOffset = FindSendPropInfo("CCSPlayer", "m_iAmmo");
+	
+	for (int i = 1; i <= MaxClients; i++)
+    {
+        if (IsClientConnected(i) && IsValidClient(i) && !IsFakeClient(i))
+            OnClientCookiesCached(i);
+    }
+	
+	for (int i = 1; i <= MaxClients; i++)
+    {
+        if (IsClientInGame(i))
+            OnClientPutInServer(i);
+    }
 }
 
 public void OnClientPostAdminCheck(int client)
 {
-	FavPri[client]=GetRandomInt(0,22);
-	FavSec[client]=GetRandomInt(0,9);
 	UseOldWpn[client]=false;
-	g_bHSOnlyClient[client]=false;
 	Kills[client]=0;
 	TotalKills[client]=0;
+}
+
+public void OnClientCookiesCached(int client)
+{
+    char cPrimary[24];
+    char cSecondary[24];
+    char cHide[24];
+    char cHSOnly[24];
+	
+    GetClientCookie(client, g_hWeapon_Primary_Cookie, cPrimary, sizeof(cPrimary));
+    GetClientCookie(client, g_hWeapon_Secondary_Cookie, cSecondary, sizeof(cSecondary));
+    GetClientCookie(client, g_Hide_Cookie, cHide, sizeof(cHide));
+    GetClientCookie(client, g_hHSOnly_Cookie, cHSOnly, sizeof(cHSOnly));
+	
+    if (!StrEqual(cPrimary, ""))
+        FavPri[client] = StringToInt(cPrimary);
+    else FavPri[client] = GetRandomInt(0,23);
+    if (!StrEqual(cSecondary, ""))
+        FavSec[client] = StringToInt(cSecondary);
+    else FavSec[client] = (0,9);
+    if (!StrEqual(cHide, ""))
+        g_bHide[client] = view_as<bool>(StringToInt(cHide));
+    else g_bHide[client] = false;
+    if (!StrEqual(cHSOnly, ""))
+        g_bHSOnlyClient[client] = view_as<bool>(StringToInt(cHSOnly));
+    else g_bHSOnlyClient[client] = false;
 }
 
 public void OnClientPutInServer(int client)
@@ -147,9 +196,9 @@ public Event_WeaponDrop(client, weapon)
 public Action removeWeapon(Handle hTimer, any iWeaponRef)
 {
     static weapon;
-    weapon = EntRefToEntIndex(iWeaponRef);
-    if(iWeaponRef == INVALID_ENT_REFERENCE || !IsValidEntity(weapon))
-		return ;
+	weapon = EntRefToEntIndex(iWeaponRef);
+    if(iWeaponRef == INVALID_ENT_REFERENCE || !IsValidEntity(weapon)|| weapon < 0)
+		return;
     AcceptEntityInput(weapon, "kill");
     
 }
@@ -158,6 +207,8 @@ public Action AD(Handle timer)
 {
 	PrintToChatAll("[\x04NEKO DM\x01]输入\x04!gun\x01或者\x04!gun\x01来选择武器!");
 	PrintToChatAll("[\x04NEKO DM\x01]输入\x04!hs\x01来开启或者关闭爆头模式");
+	PrintToChatAll("[\x04NEKO DM\x01]输入\x04!hide\x01来开启或者关闭擊殺提示");
+	PrintToChatAll("[\x04NEKO DM\x01]該插件由neko社區編寫");
 }
 public void OnMapStart()
 {
@@ -347,7 +398,7 @@ void OpenSelectmenu(int client)
 {
 	Menu menu = new Menu(Handler_SMenu);
 	menu.SetTitle("武器菜单");
-	menu.AddItem("1","选择不同武器");
+	menu.AddItem("1","选择武器");
 	menu.AddItem("2","使用上次武器");
 	menu.AddItem("3","保持上次武器");
 	menu.AddItem("4","随机武器");
@@ -367,15 +418,18 @@ public int Handler_SMenu(Menu menu, MenuAction action, int client,int itemNum)
 			}
 			case 1:
 			{
+				
 				RemoveGuns(client,1);
-				GivePlayerItem(client,WpNameFst[FavPri[client]]);
+				if(!IsPistal)
+					GivePlayerItem(client,WpNameFst[FavPri[client]]);
 				RemoveGuns(client,2);
 				GivePlayerItem(client,WpNameSec[FavSec[client]]);
 			}
 			case 2:
 			{
 				RemoveGuns(client,1);
-				GivePlayerItem(client,WpNameFst[FavPri[client]]);
+				if(!IsPistal)
+					GivePlayerItem(client,WpNameFst[FavPri[client]]);
 				RemoveGuns(client,2);
 				GivePlayerItem(client,WpNameSec[FavSec[client]]);
 				UseOldWpn[client]=true;
@@ -384,7 +438,8 @@ public int Handler_SMenu(Menu menu, MenuAction action, int client,int itemNum)
 			{
 				RemoveGuns(client,1);
 				int WeaponIndex=GetRandomInt(0,23);
-				GivePlayerItem(client,WpNameFst[WeaponIndex]);
+				if(!IsPistal)
+					GivePlayerItem(client,WpNameFst[WeaponIndex]);
 				RemoveGuns(client,2);
 				WeaponIndex=GetRandomInt(0,9);
 				GivePlayerItem(client,WpNameSec[WeaponIndex]);
@@ -412,8 +467,20 @@ public Action SetPosition(client, args)
 
 public Action Hs(client, args)
 {
+	char cHSOnly[16];
 	g_bHSOnlyClient[client]=!g_bHSOnlyClient[client];
+	cHSOnly =  g_bHSOnlyClient[client] ? "1" : "0";
 	ReplyToCommand(client,g_bHSOnlyClient[client]?"[\x04NEKO DM\x01]爆头模式开启":"[\x04NEKO DM\x01]爆头模式关闭");
+	SetClientCookie(client, g_hHSOnly_Cookie, cHSOnly);
+}
+
+public Action Hide(client, args)
+{
+	char cHide[16];
+	g_bHide[client]=!g_bHide[client];
+	ReplyToCommand(client,g_bHSOnlyClient[client]?"[\x04NEKO DM\x01]擊殺特效开启":"[\x04NEKO DM\x01]擊殺特效关闭");
+	cHide =  g_bHide[client] ? "1" : "0";
+	SetClientCookie(client, g_Hide_Cookie,cHide);
 }
 
 void BuildSpawnEditorMenu(int client)
@@ -424,14 +491,14 @@ void BuildSpawnEditorMenu(int client)
 	menu.ExitButton = true;
 	Format(editModeItem, sizeof(editModeItem), "%s Edit Mode", (!g_bInEditMode) ? "Enable" : "Disable");
 	menu.AddItem("Edit", editModeItem);
-	menu.AddItem("Nearest", "Teleport to nearest");
-	menu.AddItem("Previous", "Teleport to previous");
-	menu.AddItem("Next", "Teleport to next");
-	menu.AddItem("Add", "Add position");
-	menu.AddItem("Insert", "Insert position here");
-	menu.AddItem("Delete", "Delete nearest");
-	menu.AddItem("Delete All", "Delete all");
-	menu.AddItem("Save", "Save Configuration");
+	menu.AddItem("Nearest", "最近的出生點");
+	menu.AddItem("Previous", "上一個出生點");
+	menu.AddItem("Next", "下一個出生點");
+	menu.AddItem("Add", "添加出生點");
+	menu.AddItem("Insert", "在站立位置添加出生點");
+	menu.AddItem("Delete", "刪除離我最近的出生點");
+	menu.AddItem("Delete All", "刪除全部");
+	menu.AddItem("Save", "保存文件");
 	menu.Display(client, MENU_TIME_FOREVER);
 }
 
@@ -587,7 +654,13 @@ public int Handler_mianMenu(Menu menu, MenuAction action, int client,int itemNum
 		{
 			case 0:
 			{
-				ShowGunMenuPri(client);
+				if(IsPistal)
+				{
+					ShowGunMenuSec(client);
+					PrintToChat(client,"[\x04DM\x01]當前為手槍死斗");
+				}
+				else
+					ShowGunMenuPri(client);
 			}
 			case 1:
 			{
@@ -616,6 +689,9 @@ public GunMenuPri(Handle HandleGunMenuPri, MenuAction action, param1, param2)
 	{
 		RemoveGuns(param1,1);
 		FavPri[param1]=param2;
+		char cookieee[32];
+		IntToString(param2,cookieee,sizeof(cookieee))
+		SetClientCookie(param1, g_hWeapon_Primary_Cookie,cookieee);
 		GivePlayerItem(param1, WpNameFst[param2]);
 		ShowGunMenuSec(param1);
 	}
@@ -642,6 +718,9 @@ public GunMenuSec(Handle HandleGunMenuSec, MenuAction action, param1, param2)
 	{
 		RemoveGuns(param1,2);
 		FavSec[param1]=param2;
+		char cookieee[32];
+		IntToString(param2,cookieee,sizeof(cookieee))
+		SetClientCookie(param1, g_hWeapon_Secondary_Cookie,cookieee);
 		GivePlayerItem(param1, WpNameSec[param2]);
 	}
 	else if (action == MenuAction_End)
@@ -660,15 +739,24 @@ public Action PlayerSpawn(Event event, const char[] name, bool dontBroadcast)
 		{
 			CreateTimer(0.1, GW, client);
 		}
+		if(IsPistal)
+		{
+			SetEntProp(client, Prop_Send, "m_bHasHelmet", 0);
+		}
 	}
 	if(IsValidBotClient(client))
 	{
 		RemoveGuns(client,1);
 		int WeaponIndex=GetRandomInt(0,23);
-		GivePlayerItem(client,WpNameFst[WeaponIndex]);
+		if(!IsPistal)
+			GivePlayerItem(client,WpNameFst[WeaponIndex]);
 		RemoveGuns(client,2);
 		WeaponIndex=GetRandomInt(0,9);
 		GivePlayerItem(client,WpNameSec[WeaponIndex]);
+		if(IsPistal)
+		{
+			SetEntProp(client, Prop_Send, "m_bHasHelmet", 0);
+		}
 	}
 	if(g_iSpawnPointCount > 0)
 	{
@@ -696,7 +784,8 @@ public Action OM(Handle timer,int client)
 public Action GW(Handle timer,int client)
 {
 	RemoveGuns(client,1);
-	GivePlayerItem(client,WpNameFst[FavPri[client]]);
+	if(!IsPistal)
+		GivePlayerItem(client,WpNameFst[FavPri[client]]);
 	RemoveGuns(client,2);
 	GivePlayerItem(client,WpNameSec[FavSec[client]]);
 }
@@ -980,7 +1069,8 @@ public Action Event_PlayerDeath(Event event, const char[] name, bool dontBroadca
                     SetEntProp(attacker, Prop_Send, "m_ArmorValue", newAP, 1);
                 }
 		}
-		PlaySounds(attacker);
+		if(!g_bHide[attacker])
+			PlaySounds(attacker);
 }
 
 public void Frame_GiveAmmo(any serial)
@@ -1179,67 +1269,49 @@ PlaySounds(int entity)
 	{
 		case 1:
 		{
-			int i=GetRandomInt(0,g_szFristBlood-1);
-			EmitSoundToClient(entity,g_szFristBloodSounds[i]);
 			ShowOverlay(entity, Killone, 2.5);
 		}
 		
 		case 2:
 		{
-			int i=GetRandomInt(0,g_szDoubleKill-1);
-			EmitSoundToClient(entity,g_szDoubleKillSounds[i]);
 			ShowOverlay(entity, Killtwo, 2.5);
 		}
 		
 		case 3:
 		{
-			int i=GetRandomInt(0,g_szTripleKill-1);
-			EmitSoundToClient(entity,g_szTripleKillSounds[i]);
 			ShowOverlay(entity, Killthree, 2.5);
-			PrintToChatAll("[\x07%N\x01]正在大杀特杀,累计杀死 \x05%i \x01人",entity,Kills[entity]);
 		}
 		
 		case 4:
 		{
-			int i=GetRandomInt(0,g_szUltraKill-1);
-			EmitSoundToClient(entity,g_szUltraKillSounds[i]);
 			ShowOverlay(entity, Killfour, 2.5);
 			PrintToChatAll("[\x07%N\x01]正在大杀特杀,累计杀死 \x05%i \x01人",entity,Kills[entity]);
 		}
 		
 		case 5:
 		{
-			int i=GetRandomInt(0,g_szRampage-1);
-			EmitSoundToClient(entity,g_szRampageSounds[i]);
 			ShowOverlay(entity, Killfive, 2.5);
 			PrintToChatAll("[\x07%N\x01]正在大杀特杀,累计杀死 \x05%i \x01人",entity,Kills[entity]);
 		}
 		
 		case 6:
 		{
-			int i=GetRandomInt(0,g_szKillingSpree-1);
-			EmitSoundToClient(entity,g_szKillingSpreeSounds[i]);
 			PrintToChatAll("[\x07%N\x01]正在大杀特杀,累计杀死 \x05%i \x01人",entity,Kills[entity]);
 		}
 		
 		case 7:
 		{
-			int i=GetRandomInt(0,g_szDominating-1);
-			EmitSoundToClient(entity,g_szDominatingSounds[i]);
+			
 			PrintToChatAll("[\x07%N\x01]正在大杀特杀,累计杀死 \x05%i \x01人",entity,Kills[entity]);
 		}
 		
 		case 8:
-		{
-			int i=GetRandomInt(0,g_szMegaKill-1);
-			EmitSoundToClient(entity,g_szMegaKillSounds[i]);
+		{		
 			PrintToChatAll("[\x07%N\x01]正在大杀特杀,累计杀死 \x05%i \x01人",entity,Kills[entity]);
 		}
 		
 		case 9:
 		{
-			int i=GetRandomInt(0,g_szUnstoppable-1);
-			EmitSoundToClient(entity,g_szUnstoppableSounds[i]);
 			PrintToChatAll("[\x07%N\x01]正在大杀特杀,累计杀死 \x05%i \x01人",entity,Kills[entity]);
 		}
 		
@@ -1247,8 +1319,6 @@ PlaySounds(int entity)
 	
 	if(Kills[entity]>9)
 	{
-		int i=GetRandomInt(0,g_szWickedSick-1);
-		EmitSoundToClient(entity,g_szWickedSickSounds[i]);
 		PrintToChatAll("[\x07%N\x01]正在大杀特杀,累计杀死 \x05%i \x01人",entity,Kills[entity]);
 	}
 	
