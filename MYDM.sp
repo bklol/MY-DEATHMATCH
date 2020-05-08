@@ -24,6 +24,7 @@ ConVar mp_ignore_round_win_conditions;
 int g_iLastEditorSpawnPoint[MAXPLAYERS + 1] = {-1, ...};
 int FavPri[MAXPLAYERS+1];
 int FavSec[MAXPLAYERS+1];
+int Kills[MAXPLAYERS+1];
 int TotalKills[MAXPLAYERS+1];
 int g_iSpawnPointCount;
 int g_iGlowSprite;
@@ -127,6 +128,8 @@ public void OnClientPostAdminCheck(int client)
 	FavSec[client]=GetRandomInt(0,9);
 	UseOldWpn[client]=false;
 	g_bHSOnlyClient[client]=false;
+	Kills[client]=0;
+	TotalKills[client]=0;
 }
 
 public void OnClientPutInServer(int client)
@@ -171,8 +174,9 @@ public void OnMapStart()
 	
 	for(new i = 1; i <= MaxClients; i++)
     {
-        if(IsValidClient(i))
+        if(IsValidClient(i)||IsValidBotClient(i))
         {
+			Kills[i] = 0;
 			TotalKills[i] = 0;
         }
     }
@@ -200,7 +204,6 @@ LoadSounds()
 	kConfig.ImportFromFile(szPath);
 	kConfig.JumpToKey("Sounds");
 	kConfig.GotoFirstSubKey();
-	
 	
 	do {
 		char buffer[255];
@@ -726,7 +729,7 @@ stock bool IsMostKill( client )
 {
 	for( new i = 0; i < MaxClients; i++ )
     {
-        if(TotalKills[client] < TotalKills[i])
+        if(Kills[client] < Kills[i])
         {
             return false;
         }	
@@ -909,11 +912,14 @@ bool StripC4(int client)
 public Action Event_PlayerDeath(Event event, const char[] name, bool dontBroadcast)
 {
         int attacker = GetClientOfUserId(event.GetInt("attacker"));
+		int victim = GetClientOfUserId(GetEventInt(event, "userid"));
+		Kills[attacker]++;
 		TotalKills[attacker]++;
+		Kills[victim]=0;
 		if(TotalKills[attacker]>44)
 			Endmap();
 		if(TotalKills[attacker]>40 && TotalKills[attacker]<45 && IsMostKill(attacker))
-			PrintToChatAll("[\x04NEKO DM\x01]%N已到达%i人头,比赛将在任意玩家到达45人头后结束",attacker,TotalKills[attacker])
+			PrintToChatAll("[\x04NEKO DM\x01]%N已到达\x08 %i \x01人头,比赛将在任意玩家到达\x08 45\x01人头后结束",attacker,TotalKills[attacker])
 			
         char weapon[32];
         event.GetString("weapon", weapon, sizeof(weapon));
@@ -1169,7 +1175,7 @@ PlaySounds(int entity)
 {
 	
 	CreateTimer(0.0, DeleteOverlay, entity);
-	switch (TotalKills[entity])
+	switch (Kills[entity])
 	{
 		case 1:
 		{
@@ -1190,7 +1196,7 @@ PlaySounds(int entity)
 			int i=GetRandomInt(0,g_szTripleKill-1);
 			EmitSoundToClient(entity,g_szTripleKillSounds[i]);
 			ShowOverlay(entity, Killthree, 2.5);
-			PrintToChatAll("%N正在大杀特杀,累计杀死%i人",entity,TotalKills[entity]);
+			PrintToChatAll("[\x07%N\x01]正在大杀特杀,累计杀死 \x05%i \x01人",entity,Kills[entity]);
 		}
 		
 		case 4:
@@ -1198,7 +1204,7 @@ PlaySounds(int entity)
 			int i=GetRandomInt(0,g_szUltraKill-1);
 			EmitSoundToClient(entity,g_szUltraKillSounds[i]);
 			ShowOverlay(entity, Killfour, 2.5);
-			PrintToChatAll("%N正在大杀特杀,累计杀死%i人",entity,TotalKills[entity]);
+			PrintToChatAll("[\x07%N\x01]正在大杀特杀,累计杀死 \x05%i \x01人",entity,Kills[entity]);
 		}
 		
 		case 5:
@@ -1206,44 +1212,44 @@ PlaySounds(int entity)
 			int i=GetRandomInt(0,g_szRampage-1);
 			EmitSoundToClient(entity,g_szRampageSounds[i]);
 			ShowOverlay(entity, Killfive, 2.5);
-			PrintToChatAll("%N正在大杀特杀,累计杀死%i人",entity,TotalKills[entity]);
+			PrintToChatAll("[\x07%N\x01]正在大杀特杀,累计杀死 \x05%i \x01人",entity,Kills[entity]);
 		}
 		
 		case 6:
 		{
 			int i=GetRandomInt(0,g_szKillingSpree-1);
 			EmitSoundToClient(entity,g_szKillingSpreeSounds[i]);
-			PrintToChatAll("%N正在大杀特杀,累计杀死%i人",entity,TotalKills[entity]);
+			PrintToChatAll("[\x07%N\x01]正在大杀特杀,累计杀死 \x05%i \x01人",entity,Kills[entity]);
 		}
 		
 		case 7:
 		{
 			int i=GetRandomInt(0,g_szDominating-1);
 			EmitSoundToClient(entity,g_szDominatingSounds[i]);
-			PrintToChatAll("%N正在大杀特杀,累计杀死%i人",entity,TotalKills[entity]);
+			PrintToChatAll("[\x07%N\x01]正在大杀特杀,累计杀死 \x05%i \x01人",entity,Kills[entity]);
 		}
 		
 		case 8:
 		{
 			int i=GetRandomInt(0,g_szMegaKill-1);
 			EmitSoundToClient(entity,g_szMegaKillSounds[i]);
-			PrintToChatAll("%N正在大杀特杀,累计杀死%i人",entity,TotalKills[entity]);
+			PrintToChatAll("[\x07%N\x01]正在大杀特杀,累计杀死 \x05%i \x01人",entity,Kills[entity]);
 		}
 		
 		case 9:
 		{
 			int i=GetRandomInt(0,g_szUnstoppable-1);
 			EmitSoundToClient(entity,g_szUnstoppableSounds[i]);
-			PrintToChatAll("%N正在大杀特杀,累计杀死%i人",entity,TotalKills[entity]);
+			PrintToChatAll("[\x07%N\x01]正在大杀特杀,累计杀死 \x05%i \x01人",entity,Kills[entity]);
 		}
 		
 	}
 	
-	if(TotalKills[entity]>9)
+	if(Kills[entity]>9)
 	{
 		int i=GetRandomInt(0,g_szWickedSick-1);
 		EmitSoundToClient(entity,g_szWickedSickSounds[i]);
-		PrintToChatAll("%N正在大杀特杀,累计杀死%i人",entity,TotalKills[entity]);
+		PrintToChatAll("[\x07%N\x01]正在大杀特杀,累计杀死 \x05%i \x01人",entity,Kills[entity]);
 	}
 	
 }
