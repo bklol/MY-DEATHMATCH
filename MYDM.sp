@@ -25,6 +25,8 @@ ConVar sv_infinite_ammo;
 ConVar mp_death_drop_defuser;
 ConVar mp_buytime;
 ConVar mp_ignore_round_win_conditions;
+ConVar bot_chatter;
+ConVar bot_difficulty;
 
 int g_iLastEditorSpawnPoint[MAXPLAYERS + 1] = {-1, ...};
 int FavPri[MAXPLAYERS+1];
@@ -220,6 +222,9 @@ public void OnMapStart()
 	mp_death_drop_defuser=FindConVar("mp_death_drop_defuser");
 	mp_buytime=FindConVar("mp_buytime");
 	mp_ignore_round_win_conditions=FindConVar("mp_ignore_round_win_conditions");
+	bot_chatter=FindConVar("bot_chatter");
+	bot_difficulty=FindConVar("bot_difficulty");
+	
 	changeConvar();
 	LoadMapConfig();
 	
@@ -242,6 +247,8 @@ changeConvar()
 	mp_death_drop_defuser.IntValue=0;
 	mp_buytime.IntValue=0;
 	mp_ignore_round_win_conditions.IntValue=1;
+	bot_chatter.SetString("off");
+	bot_difficulty.IntValue=3;
 }
 
 LoadSounds()
