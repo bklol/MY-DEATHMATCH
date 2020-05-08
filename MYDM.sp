@@ -1,10 +1,7 @@
-
 #include <sourcemod>
 #include <cstrike>
 #include <sdktools>
 #include <sdkhooks>
-#include <events>
-#include <string>
 
 #define DMG_HEADSHOT (1 << 30)
 
@@ -1027,6 +1024,12 @@ public Action OnTraceAttack(int victim, int &attacker, int &inflictor, float &da
 void Endmap()
 {
 	CS_TerminateRound(0.1, CSRoundEnd_TerroristWin, true);
+	CreateTimer(0.1,EndGame);
+	
+}
+
+public Action EndGame(Handle timer)
+{
 	int ent = CreateEntityByName("game_end");
 	AcceptEntityInput(ent, "EndGame"); 
 }
