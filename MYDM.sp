@@ -25,6 +25,8 @@ ConVar sv_infinite_ammo;
 ConVar mp_death_drop_defuser;
 ConVar mp_buytime;
 ConVar mp_ignore_round_win_conditions;
+ConVar mp_warmuptime;
+//ConVar mp_maxrounds;
 ConVar bot_chatter;
 ConVar bot_difficulty;
 ConVar g_IsPistal;
@@ -135,17 +137,19 @@ public void OnPluginStart()
 	
 	RegConsoleCmd("sm_guns", Gunmenu);
 	RegConsoleCmd("sm_gun", Gunmenu);
-	RegConsoleCmd("sm_p", SetPosition);
 	RegConsoleCmd("sm_hs", Hs);
 	RegConsoleCmd("sm_hide", Hide);
+	RegAdminCmd("sm_p", SetPosition, ADMFLAG_KICK);
 	
 	HookEvent("bomb_pickup", Event_BombPickup);
 	HookEvent("weapon_fire_on_empty", Event_WeaponFireOnEmpty, EventHookMode_Post); 
 	HookEvent("player_death", Event_PlayerDeath);
 	HookEvent("player_hurt", Event_PlayerHurt, EventHookMode_Pre);
 	HookEvent("player_spawn", PlayerSpawn);  
-	
-	CreateTimer(35.0, AD, INVALID_HANDLE, TIMER_REPEAT);
+
+	HookUserMessage(GetUserMessageId("TextMsg"), Event_TextMsg, true);
+    HookUserMessage(GetUserMessageId("HintText"), Event_HintText, true);
+    HookUserMessage(GetUserMessageId("RadioText"), Event_RadioText, true);
 	
 	g_iAmmoOffset = FindSendPropInfo("CCSPlayer", "m_iAmmo");
 	
@@ -160,6 +164,8 @@ public void OnPluginStart()
         if (IsClientInGame(i))
             OnClientPutInServer(i);
     }
+	
+	CreateTimer(35.0, AD, INVALID_HANDLE, TIMER_REPEAT);
 }
 
 public void OnClientPostAdminCheck(int client)
@@ -234,6 +240,8 @@ public void OnMapStart()
 	mp_death_drop_defuser=FindConVar("mp_death_drop_defuser");
 	mp_buytime=FindConVar("mp_buytime");
 	mp_ignore_round_win_conditions=FindConVar("mp_ignore_round_win_conditions");
+	mp_warmuptime=FindConVar("mp_warmuptime");
+	//mp_maxrounds==FindConVar("mp_maxrounds");
 	bot_chatter=FindConVar("bot_chatter");
 	bot_difficulty=FindConVar("bot_difficulty");
 	
@@ -252,15 +260,17 @@ public void OnMapStart()
 
 changeConvar()
 {
-	IsEnemies.IntValue=1;
-	mp_respawn_on_death_t.IntValue=1;
-	mp_respawn_on_death_ct.IntValue=1;
-	sv_infinite_ammo.IntValue=2;
-	mp_death_drop_defuser.IntValue=0;
-	mp_buytime.IntValue=0;
-	mp_ignore_round_win_conditions.IntValue=1;
+	IsEnemies.IntValue = 1;
+	mp_respawn_on_death_t.IntValue = 1;
+	mp_respawn_on_death_ct.IntValue = 1;
+	sv_infinite_ammo.IntValue = 2;
+	mp_death_drop_defuser.IntValue = 0;
+	mp_buytime.IntValue = 0;
+	mp_ignore_round_win_conditions.IntValue = 1;
+	//mp_maxrounds.IntValue = 0;
+	mp_warmuptime.IntValue = 0;
 	bot_chatter.SetString("off");
-	bot_difficulty.IntValue=3;
+	bot_difficulty.IntValue = 3;
 }
 
 LoadSounds()
@@ -506,9 +516,9 @@ void BuildSpawnEditorMenu(int client)
 {
 	char editModeItem[24];
 	Menu menu = new Menu(MenuSpawnEditor);
-	menu.SetTitle("Spawn Point Editor:");
+	menu.SetTitle("編輯出生點:");
 	menu.ExitButton = true;
-	Format(editModeItem, sizeof(editModeItem), "%s Edit Mode", (!g_bInEditMode) ? "Enable" : "Disable");
+	Format(editModeItem, sizeof(editModeItem), "%s 顯示出生點", (!g_bInEditMode) ? "開啓" : "關閉");
 	menu.AddItem("Edit", editModeItem);
 	menu.AddItem("Nearest", "最近的出生點");
 	menu.AddItem("Previous", "上一個出生點");
@@ -533,10 +543,10 @@ public int MenuSpawnEditor(Menu menu, MenuAction action, int param1, int param2)
 			if (g_bInEditMode)
 			{
 				CreateTimer(1.0, RenderSpawnPoints, INVALID_HANDLE, TIMER_REPEAT);
-				PrintToChat(param1, "[\x04DM\x01] Spawn Editor Enabled");
+				PrintToChat(param1, "[\x04NEKO DM\x01] Spawn Editor Enabled");
 			}
 			else
-				PrintToChat(param1, "[\x04DM\x01] Spawn Editor Disabled");
+				PrintToChat(param1, "[\x04NEKO DM\x01] Spawn Editor Disabled");
 		}
 		else if (StrEqual(info, "Nearest"))
 		{
@@ -545,13 +555,13 @@ public int MenuSpawnEditor(Menu menu, MenuAction action, int param1, int param2)
 			{
 				TeleportEntity(param1, g_fSpawnPositions[spawnPoint], g_fSpawnAngles[spawnPoint], NULL_VECTOR);
 				g_iLastEditorSpawnPoint[param1] = spawnPoint;
-				PrintToChat(param1, "[\x04DM\x01] Spawn Editor Teleported #%i (%i total).", spawnPoint + 1, g_iSpawnPointCount);
+				PrintToChat(param1, "[\x04NEKO DM\x01] Spawn Editor Teleported #%i (%i total).", spawnPoint + 1, g_iSpawnPointCount);
 			}
 		}
 		else if (StrEqual(info, "Previous"))
 		{
 			if (g_iSpawnPointCount == 0)
-				PrintToChat(param1, "[\x04DM\x01] Spawn Editor No Spawn");
+				PrintToChat(param1, "[\x04NEKO DM\x01] Spawn Editor No Spawn");
 			else
 			{
 				int spawnPoint = g_iLastEditorSpawnPoint[param1] - 1;
@@ -560,7 +570,7 @@ public int MenuSpawnEditor(Menu menu, MenuAction action, int param1, int param2)
 
 				TeleportEntity(param1, g_fSpawnPositions[spawnPoint], g_fSpawnAngles[spawnPoint], NULL_VECTOR);
 				g_iLastEditorSpawnPoint[param1] = spawnPoint;
-				PrintToChat(param1, "[\x04DM\x01] Spawn Editor Teleported #%i (%i total).", spawnPoint + 1, g_iSpawnPointCount);
+				PrintToChat(param1, "[\x04NEKO DM\x01] Spawn Editor Teleported #%i (%i total).", spawnPoint + 1, g_iSpawnPointCount);
 			}
 		}
 		else if (StrEqual(info, "Next"))
@@ -575,7 +585,7 @@ public int MenuSpawnEditor(Menu menu, MenuAction action, int param1, int param2)
 
 				TeleportEntity(param1, g_fSpawnPositions[spawnPoint], g_fSpawnAngles[spawnPoint], NULL_VECTOR);
 				g_iLastEditorSpawnPoint[param1] = spawnPoint;
-				PrintToChat(param1, "[\x04DM\x01] Spawn Editor Teleported #%i (%i total).", spawnPoint + 1, g_iSpawnPointCount);
+				PrintToChat(param1, "[\x04NEKO DM\x01] Spawn Editor Teleported #%i (%i total).", spawnPoint + 1, g_iSpawnPointCount);
 			}
 		}
 		else if (StrEqual(info, "Add"))
@@ -592,7 +602,7 @@ public int MenuSpawnEditor(Menu menu, MenuAction action, int param1, int param2)
 			if (spawnPoint != -1)
 			{
 				DeleteSpawn(spawnPoint);
-				PrintToChat(param1, "[\x04DM\x01] Spawn Editor Deleted Spawn #%i (%i total).", spawnPoint + 1, g_iSpawnPointCount);
+				PrintToChat(param1, "[\x04NEKO DM\x01] Spawn Editor Deleted Spawn #%i (%i total).", spawnPoint + 1, g_iSpawnPointCount);
 			}
 		}
 		else if (StrEqual(info, "Delete All"))
@@ -607,9 +617,9 @@ public int MenuSpawnEditor(Menu menu, MenuAction action, int param1, int param2)
         else if (StrEqual(info, "Save"))
         {
 			if (WriteMapConfig())
-                PrintToChat(param1, "[\x04DM\x01] Spawn Editor Config Saved");
+                PrintToChat(param1, "[\x04NEKO DM\x01] Spawn Editor Config Saved");
             else
-                PrintToChat(param1, "[\x04DM\x01] Spawn Editor Config Not Saved");
+                PrintToChat(param1, "[\x04NEKO DM\x01] Spawn Editor Config Not Saved");
         }
 		if (!StrEqual(info, "Delete All"))
 			BuildSpawnEditorMenu(param1);
@@ -625,7 +635,7 @@ public int PanelConfirmDeleteAllSpawns(Menu menu, MenuAction action, int param1,
         if (param2 == 1)
         {
             g_iSpawnPointCount = 0;
-            PrintToChat(param1, "[\x04DM\x01]Spawn Editor Deleted All");
+            PrintToChat(param1, "[\x04NEKO DM\x01]Spawn Editor Deleted All");
         }
         BuildSpawnEditorMenu(param1);
     }
@@ -676,7 +686,7 @@ public int Handler_mianMenu(Menu menu, MenuAction action, int client,int itemNum
 				if(g_IsPistal.BoolValue)
 				{
 					ShowGunMenuSec(client);
-					PrintToChat(client,"[\x04DM\x01]當前為手槍死斗");
+					PrintToChat(client,"[\x04NEKO DM\x01]當前為手槍死斗");
 				}
 				else
 					ShowGunMenuPri(client);
@@ -904,7 +914,7 @@ int GetNearestSpawn(int client)
 {
     if (g_iSpawnPointCount == 0)
     {
-        PrintToChat(client, "[\x04DM\x01]Spawn Editor No Spawn");
+        PrintToChat(client, "[\x04NEKO DM\x01]沒有出生點");
         return -1;
     }
 
@@ -945,7 +955,7 @@ void AddSpawn(int client)
 {
     if (g_iSpawnPointCount >= 137)
     {
-        PrintToChat(client, "[\x04DM\x01] Spawn Editor Spawn Not Added");
+        PrintToChat(client, "[\x04NEKO DM\x01] 沒有增加出生點");
         return;
     }
     GetClientAbsOrigin(client, g_fSpawnPositions[g_iSpawnPointCount]);
@@ -976,7 +986,7 @@ void InsertSpawn(int client)
         GetClientAbsOrigin(client, g_fSpawnPositions[g_iLastEditorSpawnPoint[client]]);
         GetClientAbsAngles(client, g_fSpawnAngles[g_iLastEditorSpawnPoint[client]]);
         g_iSpawnPointCount++;
-        PrintToChat(client, "[\x04DM\x01] Spawn Editor Spawn Inserted #%i (%i total).", g_iLastEditorSpawnPoint[client] + 1, g_iSpawnPointCount);
+        PrintToChat(client, "[\x04NEKO DM\x01] 增加了 #%i個出生點 (%i 纍計).", g_iLastEditorSpawnPoint[client] + 1, g_iSpawnPointCount);
     }
 }
 
@@ -1343,12 +1353,147 @@ PlaySounds(int entity)
 	
 }
 
+public Action Event_TextMsg(UserMsg msg_id, BfRead msg, const int[] players, int playersNum, bool reliable, bool init)
+{
+	char text[64];
+	if (GetUserMessageType() == UM_Protobuf)
+	PbReadString(msg, "params", text, sizeof(text), 0);
+	else
+		BfReadString(msg, text, sizeof(text));
+
+	static char cashTriggers[][] = 
+	{
+            "#Player_Cash_Award_Killed_Enemy",
+            "#Team_Cash_Award_Win_Hostages_Rescue",
+            "#Team_Cash_Award_Win_Defuse_Bomb",
+            "#Team_Cash_Award_Win_Time",
+            "#Team_Cash_Award_Elim_Bomb",
+            "#Team_Cash_Award_Elim_Hostage",
+            "#Team_Cash_Award_T_Win_Bomb",
+            "#Player_Point_Award_Assist_Enemy_Plural",
+            "#Player_Point_Award_Assist_Enemy",
+            "#Player_Point_Award_Killed_Enemy_Plural",
+            "#Player_Point_Award_Killed_Enemy",
+            "#Player_Cash_Award_Kill_Hostage",
+            "#Player_Cash_Award_Damage_Hostage",
+            "#Player_Cash_Award_Get_Killed",
+            "#Player_Cash_Award_Respawn",
+            "#Player_Cash_Award_Interact_Hostage",
+            "#Player_Cash_Award_Killed_Enemy",
+            "#Player_Cash_Award_Rescued_Hostage",
+            "#Player_Cash_Award_Bomb_Defused",
+            "#Player_Cash_Award_Bomb_Planted",
+            "#Player_Cash_Award_Killed_Enemy_Generic",
+            "#Player_Cash_Award_Killed_VIP",
+            "#Player_Cash_Award_Kill_Teammate",
+            "#Team_Cash_Award_Win_Hostage_Rescue",
+            "#Team_Cash_Award_Loser_Bonus",
+            "#Team_Cash_Award_Loser_Zero",
+            "#Team_Cash_Award_Rescued_Hostage",
+            "#Team_Cash_Award_Hostage_Interaction",
+            "#Team_Cash_Award_Hostage_Alive",
+            "#Team_Cash_Award_Planted_Bomb_But_Defused",
+            "#Team_Cash_Award_CT_VIP_Escaped",
+            "#Team_Cash_Award_T_VIP_Killed",
+            "#Team_Cash_Award_no_income",
+            "#Team_Cash_Award_Generic",
+            "#Team_Cash_Award_Custom",
+            "#Team_Cash_Award_no_income_suicide",
+            "#Player_Cash_Award_ExplainSuicide_YouGotCash",
+            "#Player_Cash_Award_ExplainSuicide_TeammateGotCash",
+            "#Player_Cash_Award_ExplainSuicide_EnemyGotCash",
+            "#Player_Cash_Award_ExplainSuicide_Spectators"
+	};
+
+        for (int i = 0; i < sizeof(cashTriggers); i++)
+        {
+            if (StrEqual(text, cashTriggers[i]))
+                return Plugin_Handled;
+        }
+	for (int i = 0; i < sizeof(cashTriggers); i++)
+	{
+		if (StrEqual(text, cashTriggers[i]))
+			return Plugin_Handled;
+	}
+	if (GetUserMessageType() == UM_Protobuf)
+		PbReadString(msg, "params", text, sizeof(text), 0);
+	else
+		BfReadString(msg, text, sizeof(text));
+
+	if (StrContains(text, "#SFUI_Notice_Killed_Teammate") != -1)
+		return Plugin_Handled;
+
+	if (StrContains(text, "#Cstrike_TitlesTXT_Game_teammate_attack") != -1)
+		return Plugin_Handled;
+
+	if (StrContains(text, "#Hint_try_not_to_injure_teammates") != -1)
+		return Plugin_Handled;
+	return Plugin_Continue;
+}
+
+public Action Event_HintText(UserMsg msg_id, BfRead msg, const int[] players, int playersNum, bool reliable, bool init)
+{
+	char text[64];
+	if (GetUserMessageType() == UM_Protobuf)
+		PbReadString(msg, "text", text, sizeof(text));
+	else
+		BfReadString(msg, text, sizeof(text));
+
+	if (StrContains(text, "#SFUI_Notice_Hint_careful_around_teammates") != -1)
+		return Plugin_Handled;
+	return Plugin_Continue;
+}
+
+public Action Event_RadioText(UserMsg msg_id, BfRead msg, const int[] players, int playersNum, bool reliable, bool init)
+{
+
+	static char grenadeTriggers[][] = 
+	{
+		"#SFUI_TitlesTXT_Fire_in_the_hole",
+		"#SFUI_TitlesTXT_Flashbang_in_the_hole",
+		"#SFUI_TitlesTXT_Smoke_in_the_hole",
+		"#SFUI_TitlesTXT_Decoy_in_the_hole",
+		"#SFUI_TitlesTXT_Molotov_in_the_hole",
+		"#SFUI_TitlesTXT_Incendiary_in_the_hole"
+	};
+
+	char text[64];
+	if (GetUserMessageType() == UM_Protobuf)
+	{
+		PbReadString(msg, "msg_name", text, sizeof(text));
+		/* 0: name */
+		/* 1: msg_name == #Game_radio_location ? location : translation phrase */
+		/* 2: if msg_name == #Game_radio_location : translation phrase */
+		if (StrContains(text, "#Game_radio_location") != -1)
+		PbReadString(msg, "params", text, sizeof(text), 2);
+		else
+			PbReadString(msg, "params", text, sizeof(text), 1);
+	}
+	else
+	{
+		BfReadString(msg, text, sizeof(text));
+		if (StrContains(text, "#Game_radio_location") != -1)
+				BfReadString(msg, text, sizeof(text));
+		BfReadString(msg, text, sizeof(text));
+		BfReadString(msg, text, sizeof(text));
+	}
+
+	for (int i = 0; i < sizeof(grenadeTriggers); i++)
+	{
+            if (StrEqual(text, grenadeTriggers[i]))
+                return Plugin_Handled;
+	}
+    return Plugin_Continue;
+}
+
 void Endmap()
 {
 	 
 	if(!g_bAllowRoundEnd)
 	{
 		CS_TerminateRound(0.5, CSRoundEnd_TerroristWin, true);
+		int ent = CreateEntityByName("game_end");
+		AcceptEntityInput(ent, "EndGame");
 		g_bAllowRoundEnd = true;
 	}
 }
