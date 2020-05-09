@@ -27,6 +27,8 @@ ConVar mp_buytime;
 ConVar mp_ignore_round_win_conditions;
 ConVar bot_chatter;
 ConVar bot_difficulty;
+ConVar g_IsPistal;
+ConVar g_MaxKill;
 
 int g_iLastEditorSpawnPoint[MAXPLAYERS + 1] = {-1, ...};
 int FavPri[MAXPLAYERS+1];
@@ -52,7 +54,7 @@ bool UseOldWpn[MAXPLAYERS+1];
 bool g_bHide[MAXPLAYERS+1];
 bool g_bHSOnlyClient[MAXPLAYERS + 1];
 bool g_bInEditMode = false;
-bool IsPistal=false;
+bool g_bAllowRoundEnd = false;
 
 float g_fSpawnPositions[137][3];
 float g_fSpawnAngles[137][3];
@@ -70,6 +72,11 @@ char g_szMegaKillSounds[10][PLATFORM_MAX_PATH + 1];
 char g_szUnstoppableSounds[10][PLATFORM_MAX_PATH + 1];
 char g_szWickedSickSounds[10][PLATFORM_MAX_PATH + 1];
 
+public Plugin myinfo =
+{
+	name = "NEKO DEATH MATCH",
+	author = "NEKO"
+};
 
 enum Slots
 {
@@ -116,7 +123,12 @@ public void OnPluginStart()
 	PrecacheDecalAnyDownload(Killfour);
 	PrecacheDecalAnyDownload(Killfive);
 	
-	 g_hWeapon_Primary_Cookie = RegClientCookie("dm_weapon_primary", "Primary Weapon Selection", CookieAccess_Protected);
+	g_IsPistal = CreateConVar("Pistal_or_Not", "0","1 Pistal Only, 0 ALL");
+	g_MaxKill = CreateConVar("How_Many_kill_end_map", "45","min 6");
+	
+	AutoExecConfig();
+	
+	g_hWeapon_Primary_Cookie = RegClientCookie("dm_weapon_primary", "Primary Weapon Selection", CookieAccess_Protected);
     g_hWeapon_Secondary_Cookie = RegClientCookie("dm_weapon_secondary", "Secondary Weapon Selection", CookieAccess_Protected);
     g_Hide_Cookie = RegClientCookie("dm_hide", "hide eff", CookieAccess_Protected);
     g_hHSOnly_Cookie = RegClientCookie("dm_hsonly", "Headshot Only", CookieAccess_Protected);
@@ -427,7 +439,7 @@ public int Handler_SMenu(Menu menu, MenuAction action, int client,int itemNum)
 			{
 				
 				RemoveGuns(client,1);
-				if(!IsPistal)
+				if(!g_IsPistal.BoolValue)
 					GivePlayerItem(client,WpNameFst[FavPri[client]]);
 				RemoveGuns(client,2);
 				GivePlayerItem(client,WpNameSec[FavSec[client]]);
@@ -435,7 +447,7 @@ public int Handler_SMenu(Menu menu, MenuAction action, int client,int itemNum)
 			case 2:
 			{
 				RemoveGuns(client,1);
-				if(!IsPistal)
+				if(!g_IsPistal.BoolValue)
 					GivePlayerItem(client,WpNameFst[FavPri[client]]);
 				RemoveGuns(client,2);
 				GivePlayerItem(client,WpNameSec[FavSec[client]]);
@@ -445,7 +457,7 @@ public int Handler_SMenu(Menu menu, MenuAction action, int client,int itemNum)
 			{
 				RemoveGuns(client,1);
 				int WeaponIndex=GetRandomInt(0,23);
-				if(!IsPistal)
+				if(!g_IsPistal.BoolValue)
 					GivePlayerItem(client,WpNameFst[WeaponIndex]);
 				RemoveGuns(client,2);
 				WeaponIndex=GetRandomInt(0,9);
@@ -661,7 +673,7 @@ public int Handler_mianMenu(Menu menu, MenuAction action, int client,int itemNum
 		{
 			case 0:
 			{
-				if(IsPistal)
+				if(g_IsPistal.BoolValue)
 				{
 					ShowGunMenuSec(client);
 					PrintToChat(client,"[\x04DM\x01]當前為手槍死斗");
@@ -746,7 +758,7 @@ public Action PlayerSpawn(Event event, const char[] name, bool dontBroadcast)
 		{
 			CreateTimer(0.1, GW, client);
 		}
-		if(IsPistal)
+		if(g_IsPistal.BoolValue)
 		{
 			SetEntProp(client, Prop_Send, "m_bHasHelmet", 0);
 		}
@@ -755,12 +767,12 @@ public Action PlayerSpawn(Event event, const char[] name, bool dontBroadcast)
 	{
 		RemoveGuns(client,1);
 		int WeaponIndex=GetRandomInt(0,23);
-		if(!IsPistal)
+		if(!g_IsPistal.BoolValue)
 			GivePlayerItem(client,WpNameFst[WeaponIndex]);
 		RemoveGuns(client,2);
 		WeaponIndex=GetRandomInt(0,9);
 		GivePlayerItem(client,WpNameSec[WeaponIndex]);
-		if(IsPistal)
+		if(g_IsPistal.BoolValue)
 		{
 			SetEntProp(client, Prop_Send, "m_bHasHelmet", 0);
 		}
@@ -791,7 +803,7 @@ public Action OM(Handle timer,int client)
 public Action GW(Handle timer,int client)
 {
 	RemoveGuns(client,1);
-	if(!IsPistal)
+	if(!g_IsPistal.BoolValue)
 		GivePlayerItem(client,WpNameFst[FavPri[client]]);
 	RemoveGuns(client,2);
 	GivePlayerItem(client,WpNameSec[FavSec[client]]);
@@ -1012,10 +1024,10 @@ public Action Event_PlayerDeath(Event event, const char[] name, bool dontBroadca
 		Kills[attacker]++;
 		TotalKills[attacker]++;
 		Kills[victim]=0;
-		if(TotalKills[attacker]>44)
+		if( TotalKills[attacker]+1 > g_MaxKill.IntValue )
 			Endmap();
-		if(TotalKills[attacker]>40 && TotalKills[attacker]<45 && IsMostKill(attacker))
-			PrintToChatAll("[\x04NEKO DM\x01]%N已到达\x08 %i \x01人头,比赛将在任意玩家到达\x08 45\x01人头后结束",attacker,TotalKills[attacker])
+		if( TotalKills[attacker]+5 >g_MaxKill.IntValue && TotalKills[attacker]< g_MaxKill.IntValue && IsMostKill(attacker))
+			PrintToChatAll("[\x04NEKO DM\x01]%N已到达\x08 %i \x01人头! 比赛将在任意玩家到达\x08 %i \x01人头后结束",attacker,TotalKills[attacker],g_MaxKill.IntValue)
 			
         char weapon[32];
         event.GetString("weapon", weapon, sizeof(weapon));
@@ -1333,13 +1345,17 @@ PlaySounds(int entity)
 
 void Endmap()
 {
-	CS_TerminateRound(0.1, CSRoundEnd_TerroristWin, true);
-	CreateTimer(0.1,EndGame);
-	
+	 
+	if(!g_bAllowRoundEnd)
+	{
+		CS_TerminateRound(0.5, CSRoundEnd_TerroristWin, true);
+		g_bAllowRoundEnd = true;
+	}
 }
 
-public Action EndGame(Handle timer)
+public Action CS_OnTerminateRound(&Float:delay, &CSRoundEndReason:reason)
 {
-	int ent = CreateEntityByName("game_end");
-	AcceptEntityInput(ent, "EndGame"); 
+	g_bAllowRoundEnd = false;
+	return Plugin_Continue;
 }
+
