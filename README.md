@@ -1,2 +1,1 @@
-# MY-DEATHMATCH
-NEKO DEATH MATCH PLUGIN
+neko服务器使用的死斗插件
