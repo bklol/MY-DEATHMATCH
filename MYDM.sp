@@ -12,6 +12,7 @@
 #define Killfive "overlays/kill/kill_5"
 
 #define DMG_HEADSHOT (1 << 30)
+#define MAX_SPAWNS 200
 
 Handle g_hWeapon_Primary_Cookie;
 Handle g_hWeapon_Secondary_Cookie;
@@ -61,7 +62,7 @@ bool g_bAllowRoundEnd = false;
 float g_fSpawnPositions[137][3];
 float g_fSpawnAngles[137][3];
 float g_fSpawnPointOffset[3] = { 0.0, 0.0, 20.0 };
-
+float g_fEyeOffset[3] = { 0.0, 0.0, 64.0 }; 
 
 char g_szFristBloodSounds[10][PLATFORM_MAX_PATH + 1];
 char g_szDoubleKillSounds[10][PLATFORM_MAX_PATH + 1];
@@ -73,6 +74,7 @@ char g_szDominatingSounds[10][PLATFORM_MAX_PATH + 1];
 char g_szMegaKillSounds[10][PLATFORM_MAX_PATH + 1];
 char g_szUnstoppableSounds[10][PLATFORM_MAX_PATH + 1];
 char g_szWickedSickSounds[10][PLATFORM_MAX_PATH + 1];
+bool g_bSpawnPointOccupied[MAX_SPAWNS] = {false, ...};
 
 public Plugin myinfo =
 {
@@ -131,7 +133,7 @@ public void OnPluginStart()
 	AutoExecConfig();
 	
 	g_hWeapon_Primary_Cookie = RegClientCookie("dm_weapon_primary", "Primary Weapon Selection", CookieAccess_Protected);
-    g_hWeapon_Secondary_Cookie = RegClientCookie("dm_weapon_secondary", "Secondary Weapon Selection", CookieAccess_Protected);
+	g_hWeapon_Secondary_Cookie = RegClientCookie("dm_weapon_secondary", "Secondary Weapon Selection", CookieAccess_Protected);
     g_Hide_Cookie = RegClientCookie("dm_hide", "hide eff", CookieAccess_Protected);
     g_hHSOnly_Cookie = RegClientCookie("dm_hsonly", "Headshot Only", CookieAccess_Protected);
 	
@@ -139,7 +141,7 @@ public void OnPluginStart()
 	RegConsoleCmd("sm_gun", Gunmenu);
 	RegConsoleCmd("sm_hs", Hs);
 	RegConsoleCmd("sm_hide", Hide);
-	RegAdminCmd("sm_p", SetPosition, ADMFLAG_KICK);
+	RegAdminCmd("sm_sp", SetPosition, ADMFLAG_KICK);
 	
 	HookEvent("bomb_pickup", Event_BombPickup);
 	HookEvent("weapon_fire_on_empty", Event_WeaponFireOnEmpty, EventHookMode_Post); 
@@ -208,9 +210,11 @@ public void OnClientPutInServer(int client)
 	SDKHook(client, SDKHook_WeaponDropPost, Event_WeaponDrop);
 }
 
-public Event_WeaponDrop(client, weapon)
+public Event_WeaponDrop(int client,int weapon)
 {
-    CreateTimer(0.1, removeWeapon, EntIndexToEntRef(weapon), TIMER_FLAG_NO_MAPCHANGE);
+	if(!IsValidEntity(weapon)|| weapon < 0)
+		return;
+	CreateTimer(0.1, removeWeapon, EntIndexToEntRef(weapon), TIMER_FLAG_NO_MAPCHANGE);
 }
 
 public Action removeWeapon(Handle hTimer, any iWeaponRef)
@@ -255,6 +259,11 @@ public void OnMapStart()
 			Kills[i] = 0;
 			TotalKills[i] = 0;
         }
+    }
+    if (g_iSpawnPointCount > 0)
+    {
+        for (int i = 0; i < g_iSpawnPointCount; i++)
+            g_bSpawnPointOccupied[i] = false;
     }
 }
 
@@ -507,7 +516,7 @@ public Action Hide(client, args)
 {
 	char cHide[16];
 	g_bHide[client]=!g_bHide[client];
-	ReplyToCommand(client,g_bHSOnlyClient[client]?"[\x04NEKO DM\x01]擊殺特效开启":"[\x04NEKO DM\x01]擊殺特效关闭");
+	ReplyToCommand(client,g_bHSOnlyClient[client]?"[\x04NEKO DM\x01]击杀特效开启":"[\x04NEKO DM\x01]击杀特效关闭");
 	cHide =  g_bHide[client] ? "1" : "0";
 	SetClientCookie(client, g_Hide_Cookie,cHide);
 }
@@ -518,7 +527,7 @@ void BuildSpawnEditorMenu(int client)
 	Menu menu = new Menu(MenuSpawnEditor);
 	menu.SetTitle("編輯出生點:");
 	menu.ExitButton = true;
-	Format(editModeItem, sizeof(editModeItem), "%s 顯示出生點", (!g_bInEditMode) ? "開啓" : "關閉");
+	Format(editModeItem, sizeof(editModeItem), "%s 显示出生點", (!g_bInEditMode) ? "开启" : "关闭");
 	menu.AddItem("Edit", editModeItem);
 	menu.AddItem("Nearest", "最近的出生點");
 	menu.AddItem("Previous", "上一個出生點");
@@ -543,10 +552,10 @@ public int MenuSpawnEditor(Menu menu, MenuAction action, int param1, int param2)
 			if (g_bInEditMode)
 			{
 				CreateTimer(1.0, RenderSpawnPoints, INVALID_HANDLE, TIMER_REPEAT);
-				PrintToChat(param1, "[\x04NEKO DM\x01] Spawn Editor Enabled");
+				PrintToChat(param1, "[\x04NEKO DM\x01] 出生点编辑打开");
 			}
 			else
-				PrintToChat(param1, "[\x04NEKO DM\x01] Spawn Editor Disabled");
+				PrintToChat(param1, "[\x04NEKO DM\x01] 出生点编辑关闭");
 		}
 		else if (StrEqual(info, "Nearest"))
 		{
@@ -608,7 +617,7 @@ public int MenuSpawnEditor(Menu menu, MenuAction action, int param1, int param2)
 		else if (StrEqual(info, "Delete All"))
 		{
             Panel panel = new Panel();
-            panel.SetTitle("Delete all spawn points?");
+            panel.SetTitle("删除全部出生点?");
             panel.DrawItem("Yes");
             panel.DrawItem("No");
             panel.Send(param1, PanelConfirmDeleteAllSpawns, MENU_TIME_FOREVER);
@@ -787,15 +796,111 @@ public Action PlayerSpawn(Event event, const char[] name, bool dontBroadcast)
 			SetEntProp(client, Prop_Send, "m_bHasHelmet", 0);
 		}
 	}
-	if(g_iSpawnPointCount > 0)
-	{
-		int spawnPoint = GetRandomInt(0, g_iSpawnPointCount - 1);
-		TeleportEntity(client, g_fSpawnPositions[spawnPoint], g_fSpawnAngles[spawnPoint], NULL_VECTOR);
-	}
+	MovePlayer(client);
 	SetEntProp(client, Prop_Data, "m_takedamage", 0);
 	SetEntityRenderColor(client, 0, 0,255, 255);
 	CreateTimer(0.1,RemoveRadar,client)
-	CreateTimer(4.0, removeGod, client);
+	CreateTimer(2.5, removeGod, client);
+	StripC4(client);
+}
+
+void MovePlayer(int client)
+{
+    int clientTeam = GetClientTeam(client);
+
+    int spawnPoint;
+    bool spawnPointFound = false;
+
+    float enemyEyePositions[MAXPLAYERS+1][3];
+    int numberOfEnemies = 0;
+
+    /* Retrieve enemy positions if required by LoS/distance spawning (at eye level for LoS checking). */
+
+	for (int i = 1; i <= MaxClients; i++)
+	{
+		if (IsClientInGame(i) && (GetClientTeam(i) != CS_TEAM_SPECTATOR) && IsPlayerAlive(i))
+		{
+			bool enemy = (GetClientTeam(i) != clientTeam);
+			if (enemy)
+			{
+				GetClientEyePosition(i, enemyEyePositions[numberOfEnemies]);
+				numberOfEnemies++;
+			}
+		}
+	}
+
+        /* Try to find a suitable spawn point with a clear line of sight. */
+	for (int i = 0; i < 10; i++)
+    {
+		spawnPoint = GetRandomInt(0, g_iSpawnPointCount - 1);
+
+        if (g_bSpawnPointOccupied[spawnPoint])
+            continue;
+
+
+		if (!IsPointSuitableDistance(spawnPoint, enemyEyePositions, numberOfEnemies))
+			continue;
+
+		float spawnPointEyePosition[3];
+		AddVectors(g_fSpawnPositions[spawnPoint], g_fEyeOffset, spawnPointEyePosition);
+
+		bool hasClearLineOfSight = true;
+
+		for (int j = 0; j < numberOfEnemies; j++)
+		{
+                Handle trace = TR_TraceRayFilterEx(spawnPointEyePosition, enemyEyePositions[j], MASK_PLAYERSOLID_BRUSHONLY, RayType_EndPoint, TraceEntityFilterPlayer);
+                if (!TR_DidHit(trace))
+                {
+                    hasClearLineOfSight = false;
+                    CloseHandle(trace);
+                    break;
+                }
+                CloseHandle(trace);
+        }
+		if (hasClearLineOfSight)
+		{
+			spawnPointFound = true;
+			break;
+		}
+    }
+
+    /* First fallback. Find a random unccupied spawn point at a suitable distance. */
+    if (!spawnPointFound)
+    {
+
+        for (int i = 0; i < 100; i++)
+        {
+            spawnPoint = GetRandomInt(0, g_iSpawnPointCount - 1);
+            if (g_bSpawnPointOccupied[spawnPoint])
+                continue;
+
+            if (!IsPointSuitableDistance(spawnPoint, enemyEyePositions, numberOfEnemies))
+                continue;
+
+            spawnPointFound = true;
+            break;
+        }
+    }
+
+    /* Final fallback. Find a random unoccupied spawn point. */
+    if (!spawnPointFound)
+    {
+        for (int i = 0; i < 100; i++)
+        {
+            spawnPoint = GetRandomInt(0, g_iSpawnPointCount - 1);
+            if (!g_bSpawnPointOccupied[spawnPoint])
+            {
+                spawnPointFound = true;
+                break;
+            }
+        }
+    }
+
+    if (spawnPointFound)
+    {
+        TeleportEntity(client, g_fSpawnPositions[spawnPoint], g_fSpawnAngles[spawnPoint], NULL_VECTOR);
+        g_bSpawnPointOccupied[spawnPoint] = true;
+    }
 }
 
 public Action RemoveRadar(Handle timer, any client)
@@ -1503,4 +1608,22 @@ public Action CS_OnTerminateRound(&Float:delay, &CSRoundEndReason:reason)
 	g_bAllowRoundEnd = false;
 	return Plugin_Continue;
 }
+
+bool IsPointSuitableDistance(int spawnPoint, float[][3] enemyEyePositions, int numberOfEnemies)
+{
+    for (int i = 0; i < numberOfEnemies; i++)
+    {
+        float distance = GetVectorDistance(g_fSpawnPositions[spawnPoint], enemyEyePositions[i], true);
+        if (distance < 0.0)
+            return false;
+    }
+    return true;
+}
+
+public bool TraceEntityFilterPlayer(int entity, int contentsMask)
+{
+    if ((entity > 0) && (entity <= MaxClients)) return false;
+    return true;
+}
+
 
